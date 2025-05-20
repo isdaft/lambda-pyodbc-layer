@@ -1,72 +1,41 @@
-name: Build Basic pyodbc Layer
+name: Build Minimal pyodbc Layer
 
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   build-layer:
     runs-on: ubuntu-latest
     steps:
-      - name: Build Layer
+      - name: Build Simple Layer
         run: |
-          # Create layer directory structure
+          # Create layer structure
           mkdir -p layer/python/lib/python3.9/site-packages
           
           # Install pyodbc
           pip install pyodbc -t layer/python/lib/python3.9/site-packages
           
-          # Create minimal odbcinst.ini
+          # Create placeholder for ODBC config
           mkdir -p layer/opt
           echo '[ODBC Driver 17 for SQL Server]' > layer/opt/odbcinst.ini
           echo 'Description=Microsoft ODBC Driver 17 for SQL Server' >> layer/opt/odbcinst.ini
           echo 'Driver=/opt/microsoft/msodbcsql17/lib64/libmsodbcsql-17.10.so.4.1' >> layer/opt/odbcinst.ini
           
-          # Create zip file
+          # Create zip
           cd layer
           zip -r ../pyodbc-layer.zip .
           cd ..
           
           # Show file info
           ls -la pyodbc-layer.zip
-          echo "Layer created: $(du -h pyodbc-layer.zip | cut -f1)"
           
-          # Create output directory
-          mkdir -p output
+          # Create public link using transfer.sh
+          echo "Creating download link..."
+          DOWNLOAD_URL=$(curl --upload-file pyodbc-layer.zip https://transfer.sh/pyodbc-layer.zip)
+          echo "Download your layer using this link (valid for 14 days):"
+          echo "$DOWNLOAD_URL"
           
-          # Split the zip into smaller chunks (1MB each)
-          split -b 1m pyodbc-layer.zip output/pyodbc-layer.zip.part-
-          
-          # List the parts
-          echo "File has been split into parts:"
-          ls -la output/
-          
-          # Create a text file with assembly instructions
-          cat > output/README.txt << 'EOF'
-          To reassemble the pyodbc-layer.zip file:
-          
-          Linux/Mac:
-          cat pyodbc-layer.zip.part-* > pyodbc-layer.zip
-          
-          Windows:
-          copy /b pyodbc-layer.zip.part-* pyodbc-layer.zip
-          EOF
-
-      - name: Store layer file parts
-        run: |
-          # Store each part as a step output so it can be seen in the logs
-          for part in output/pyodbc-layer.zip.part-*; do
-            echo "Output part file: $part"
-            echo "::notice::Part file ready for download: $part"
-          done
-          
-          # Calculate sha256 hash for verification
-          sha256sum pyodbc-layer.zip > output/checksum.txt
-          cat output/checksum.txt
-      
-      - name: Make files available for download
-        uses: actions/upload-artifact@v1
-        with:
-          name: pyodbc-layer-parts
-          path: output
+          # Also provide alternative using file.io (7 day link)
+          ALT_URL=$(curl -F "file=@pyodbc-layer.zip" https://file.io)
+          echo "Alternative download link:"
+          echo "$ALT_URL"
