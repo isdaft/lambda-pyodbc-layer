@@ -52,30 +52,6 @@ jobs:
           cat linux_odbc_drivers/opt/odbcinst.ini >> linux_odbc_drivers/opt/driver_info.txt
           
           echo "Creating README file..."
-          cat > linux_odbc_drivers/README.txt << 'EOF'
-# Microsoft ODBC Driver for Linux
-
-This package contains the Microsoft ODBC Driver for SQL Server, compiled for Linux.
-
-## Directory Structure
-
-- `/opt/microsoft/msodbcsql17/lib64/` - Contains the actual driver shared library
-- `/opt/odbcinst.ini` - Contains the ODBC driver configuration
-
-## Usage with Lambda Layer
-
-This package is designed to be extracted into a Lambda layer structure.
-
-When building your layer:
-1. Extract this ZIP file to get the `/opt` directory structure
-2. Install pyodbc into the appropriate Python directory
-3. Zip everything up for your Lambda layer
-
-## Important Note
-
-These are LINUX binaries that will only work in a Linux environment like AWS Lambda.
-They will NOT work directly on Windows.
-EOF
           
           # Create the ZIP file
           echo "Creating ZIP file..."
