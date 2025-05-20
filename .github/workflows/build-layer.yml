@@ -1,7 +1,12 @@
-name: Build Complete pyodbc Layer with Drivers
+name: Build pyodbc Layer (Lambda Compatible)
 
 on:
   workflow_dispatch:
+    inputs:
+      python_version:
+        description: 'Python version (3.8, 3.9, 3.10, etc)'
+        required: true
+        default: '3.9'
 
 jobs:
   build-layer:
@@ -10,7 +15,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: ${{ github.event.inputs.python_version }}
       
       - name: Install Microsoft ODBC Drivers
         run: |
@@ -24,20 +29,19 @@ jobs:
           # Install ODBC driver and tools
           echo 'debconf debconf/frontend select Noninteractive' | sudo debconf-set-selections
           sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 unixodbc-dev
-          
-          # Check driver installation
-          echo "Checking ODBC drivers:"
-          odbcinst -j
-          cat /etc/odbcinst.ini
       
       - name: Build Layer with Drivers
         run: |
-          # Create layer structure
-          mkdir -p layer/python/lib/python3.9/site-packages
+          # Get Python version for folder structure
+          PY_VERSION=${{ github.event.inputs.python_version }}
+          echo "Building for Python ${PY_VERSION}"
+          
+          # Create layer structure with correct Python version
+          mkdir -p layer/python/lib/python${PY_VERSION}/site-packages
           mkdir -p layer/opt
           
           # Install pyodbc
-          pip install pyodbc -t layer/python/lib/python3.9/site-packages
+          pip install pyodbc -t layer/python/lib/python${PY_VERSION}/site-packages
           
           # Copy Microsoft ODBC drivers to layer
           sudo mkdir -p layer/opt/microsoft
@@ -47,9 +51,19 @@ jobs:
           # Copy ODBC configuration files
           cp /etc/odbcinst.ini layer/opt/
           
-          # List all files in the layer to verify
-          echo "Verifying layer contents:"
-          find layer -type f | sort
+          # Create helpful readme
+          cat > layer/README.txt << EOF
+          PYODBC LAMBDA LAYER
+          
+          This layer contains:
+          1. pyodbc Python module
+          2. Microsoft ODBC Driver 17 for SQL Server
+          
+          To use in Lambda:
+          1. Set environment variable: ODBCSYSINI=/opt
+          2. Connection string example:
+             conn_str = "DRIVER={ODBC Driver 17 for SQL Server};SERVER=your-server;DATABASE=your-db;UID=user;PWD=password"
+          EOF
           
           # Create zip
           cd layer
@@ -63,5 +77,5 @@ jobs:
       - name: Upload Layer ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: pyodbc-layer-with-drivers
+          name: pyodbc-layer-python${{ github.event.inputs.python_version }}
           path: pyodbc-layer.zip
