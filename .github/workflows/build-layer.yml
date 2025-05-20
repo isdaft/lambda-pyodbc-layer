@@ -1,12 +1,7 @@
-name: Build pyodbc Layer (Lambda Compatible)
+name: Build pyodbc Layer for Python 3.13
 
 on:
   workflow_dispatch:
-    inputs:
-      python_version:
-        description: 'Python version (3.8, 3.9, 3.10, etc)'
-        required: true
-        default: '3.13'
 
 jobs:
   build-layer:
@@ -15,60 +10,34 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: ${{ github.event.inputs.python_version }}
+          python-version: '3.11'  # GitHub Actions doesn't yet have 3.13
       
       - name: Install Microsoft ODBC Drivers
         run: |
           # Add Microsoft repositories
           curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
           curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list | sudo tee /etc/apt/sources.list.d/msprod.list
-          
-          # Update packages
           sudo apt-get update
-          
-          # Install ODBC driver and tools
-          echo 'debconf debconf/frontend select Noninteractive' | sudo debconf-set-selections
           sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 unixodbc-dev
       
-      - name: Build Layer with Drivers
+      - name: Build Layer
         run: |
-          # Get Python version for folder structure
-          PY_VERSION=${{ github.event.inputs.python_version }}
-          echo "Building for Python ${PY_VERSION}"
+          # Use 3.13 for directory structure (even though we're using 3.11 to build)
+          mkdir -p python/lib/python3.13/site-packages
+          pip install pyodbc -t python/lib/python3.13/site-packages
           
-          # Create layer structure with correct Python version
-          mkdir -p layer/python/lib/python${PY_VERSION}/site-packages
-          mkdir -p layer/opt
+          # Copy Microsoft ODBC drivers
+          mkdir -p opt/microsoft
+          sudo cp -r /opt/microsoft/msodbcsql17 opt/microsoft/
+          sudo cp /etc/odbcinst.ini opt/
+          sudo chown -R $USER:$USER opt
           
-          # Install pyodbc
-          pip install pyodbc -t layer/python/lib/python${PY_VERSION}/site-packages
+          # Verify directory structure
+          echo "Layer structure:"
+          find . -type d | sort
           
-          # Copy Microsoft ODBC drivers to layer
-          sudo mkdir -p layer/opt/microsoft
-          sudo cp -r /opt/microsoft/msodbcsql17 layer/opt/microsoft/
-          sudo chown -R $USER:$USER layer/opt
-          
-          # Copy ODBC configuration files
-          cp /etc/odbcinst.ini layer/opt/
-          
-          # Create helpful readme
-          cat > layer/README.txt << EOF
-          PYODBC LAMBDA LAYER
-          
-          This layer contains:
-          1. pyodbc Python module
-          2. Microsoft ODBC Driver 17 for SQL Server
-          
-          To use in Lambda:
-          1. Set environment variable: ODBCSYSINI=/opt
-          2. Connection string example:
-             conn_str = "DRIVER={ODBC Driver 17 for SQL Server};SERVER=your-server;DATABASE=your-db;UID=user;PWD=password"
-          EOF
-          
-          # Create zip
-          cd layer
-          zip -r ../pyodbc-layer.zip .
-          cd ..
+          # Create zip WITHOUT a top-level directory
+          zip -r pyodbc-layer.zip python opt
           
           # Show file info
           ls -la pyodbc-layer.zip
@@ -77,5 +46,5 @@ jobs:
       - name: Upload Layer ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: pyodbc-layer-python${{ github.event.inputs.python_version }}
+          name: pyodbc-layer-python3.13
           path: pyodbc-layer.zip
