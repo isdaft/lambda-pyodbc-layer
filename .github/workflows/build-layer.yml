@@ -1,0 +1,66 @@
+name: Build pyodbc Lambda Layer
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # Allows manual triggering
+
+jobs:
+  build-layer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v2
+        
+      - name: Build Lambda Layer
+        run: |
+          # Create Dockerfile for building the layer
+          cat > Dockerfile <<EOF
+          FROM public.ecr.aws/lambda/python:3.12
+          
+          # Install build tools and ODBC libraries
+          RUN yum update -y && \
+              yum install -y unixODBC unixODBC-devel gcc curl zip
+          
+          # Install Microsoft ODBC Driver
+          RUN curl https://packages.microsoft.com/config/rhel/8/prod.repo > /etc/yum.repos.d/mssql-release.repo && \
+              ACCEPT_EULA=Y yum install -y msodbcsql17
+          
+          # Create layer directory structure
+          RUN mkdir -p /layer/python/lib/python3.12/site-packages /layer/opt
+          
+          # Install pyodbc only (not pandas)
+          RUN pip install --upgrade pip && \
+              pip install pyodbc -t /layer/python/lib/python3.12/site-packages
+          
+          # Copy ODBC files
+          RUN cp -r /opt/microsoft /layer/opt/ && \
+              cp /etc/odbcinst.ini /layer/opt/
+              
+          # Create a README file
+          RUN echo "# pyodbc Lambda Layer\n\nContains pyodbc and Microsoft ODBC Driver for SQL Server.\n\nTo use this layer:\n\n1. Add this layer to your Lambda function\n2. Set ODBCSYSINI=/opt in your function's environment variables" > /layer/README.md
+          
+          WORKDIR /layer
+          
+          # Create zip file
+          RUN zip -r /tmp/layer.zip .
+          
+          # Output file
+          CMD ["cp", "/tmp/layer.zip", "/out/pyodbc-layer.zip"]
+          EOF
+          
+          # Build image and create layer
+          mkdir -p output
+          docker build -t lambda-layer-builder .
+          docker run --rm -v $(pwd)/output:/out lambda-layer-builder
+          
+          echo "Layer created at $(pwd)/output/pyodbc-layer.zip"
+          ls -la output/
+      
+      - name: Upload layer as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: pyodbc-layer
+          path: output/pyodbc-layer.zip
