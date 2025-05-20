@@ -5,13 +5,13 @@ on:
 
 jobs:
   download-drivers:
-    runs-on: ubuntu-20.04  # Use Ubuntu 20.04 specifically which works with the Microsoft repository
+    runs-on: ubuntu-22.04  # Using Ubuntu 22.04 which is supported
     steps:
       - name: Install Microsoft ODBC Driver for Linux
         run: |
           echo "Installing Microsoft ODBC Driver for SQL Server..."
           sudo curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
-          sudo curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
+          sudo curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
           sudo apt-get update
           sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev
           
@@ -79,7 +79,6 @@ jobs:
           echo "# Driver path in Lambda: $DRIVER_PATH" >> linux_odbc_drivers/opt/driver_info.txt
           echo "# Configuration:" >> linux_odbc_drivers/opt/driver_info.txt
           cat linux_odbc_drivers/opt/odbcinst.ini >> linux_odbc_drivers/opt/driver_info.txt
-          
           
           
           # Create the ZIP file
