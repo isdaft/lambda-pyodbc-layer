@@ -1,4 +1,4 @@
-name: Build pyodbc Layer for Python 3.13
+name: Build pyodbc Layer with Linux Drivers
 
 on:
   workflow_dispatch:
@@ -10,11 +10,10 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'  # GitHub Actions doesn't yet have 3.13
+          python-version: '3.11'
       
       - name: Install Microsoft ODBC Drivers
         run: |
-          # Add Microsoft repositories
           curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
           curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list | sudo tee /etc/apt/sources.list.d/msprod.list
           sudo apt-get update
@@ -22,29 +21,27 @@ jobs:
       
       - name: Build Layer
         run: |
-          # Use 3.13 for directory structure (even though we're using 3.11 to build)
           mkdir -p python/lib/python3.13/site-packages
-          pip install pyodbc -t python/lib/python3.13/site-packages
+          mkdir -p opt/python/lib/python3.13/site-packages
+          mkdir -p opt/microsoft/msodbcsql17
           
-          # Copy Microsoft ODBC drivers
-          mkdir -p opt/microsoft
+          # Install pyodbc to both paths
+          pip install pyodbc -t python/lib/python3.13/site-packages
+          pip install pyodbc -t opt/python/lib/python3.13/site-packages
+          
+          # Copy ODBC drivers
           sudo cp -r /opt/microsoft/msodbcsql17 opt/microsoft/
           sudo cp /etc/odbcinst.ini opt/
           sudo chown -R $USER:$USER opt
           
-          # Verify directory structure
-          echo "Layer structure:"
+          # Verify structure
           find . -type d | sort
           
-          # Create zip WITHOUT a top-level directory
+          # Create zip
           zip -r pyodbc-layer.zip python opt
-          
-          # Show file info
-          ls -la pyodbc-layer.zip
-          echo "Layer size: $(du -h pyodbc-layer.zip | cut -f1)"
       
-      - name: Upload Layer ZIP
-        uses: actions/upload-artifact@v4
+      - name: Upload Layer Artifact
+        uses: actions/upload-artifact@v3
         with:
           name: pyodbc-layer-python3.13
           path: pyodbc-layer.zip
