@@ -1,0 +1,94 @@
+name: Download Linux ODBC Drivers
+
+on:
+  workflow_dispatch:
+
+jobs:
+  download-drivers:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Microsoft ODBC Driver for Linux
+        run: |
+          echo "Installing Microsoft ODBC Driver for SQL Server..."
+          curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+          curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.repo
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17
+          
+          echo "Driver version info:"
+          ls -la /opt/microsoft/msodbcsql17/lib64/
+          cat /etc/odbcinst.ini
+
+      - name: Create Correctly Structured Package
+        run: |
+          echo "Creating directory structure..."
+          mkdir -p linux_odbc_drivers/opt/microsoft
+          mkdir -p linux_odbc_drivers/opt/python
+          
+          echo "Copying ODBC driver files..."
+          sudo cp -r /opt/microsoft/msodbcsql17 linux_odbc_drivers/opt/microsoft/
+          sudo cp /etc/odbcinst.ini linux_odbc_drivers/opt/
+          sudo chown -R $(id -u):$(id -g) linux_odbc_drivers
+          
+          echo "Updating odbcinst.ini to ensure it has the correct path..."
+          # Make sure the odbcinst.ini references the correct file
+          grep -q "libmsodbcsql-17.10.so" linux_odbc_drivers/opt/odbcinst.ini
+          if [ $? -eq 0 ]; then
+            # Get the actual driver filename
+            DRIVER_FILE=$(ls linux_odbc_drivers/opt/microsoft/msodbcsql17/lib64/libmsodbcsql-* | head -1)
+            DRIVER_NAME=$(basename $DRIVER_FILE)
+            echo "Found driver: $DRIVER_NAME"
+            
+            # Update the configuration
+            sed -i "s|libmsodbcsql-[0-9]*\.[0-9]*\.so\.[0-9]*\.[0-9]*|$DRIVER_NAME|" linux_odbc_drivers/opt/odbcinst.ini
+            echo "Updated odbcinst.ini to reference: $DRIVER_NAME"
+          fi
+          
+          echo "Creating validation file..."
+          echo "# ODBC Driver Validation File" > linux_odbc_drivers/opt/driver_info.txt
+          echo "# Created: $(date)" >> linux_odbc_drivers/opt/driver_info.txt
+          echo "# Driver file: $(ls linux_odbc_drivers/opt/microsoft/msodbcsql17/lib64/libmsodbcsql-* | head -1)" >> linux_odbc_drivers/opt/driver_info.txt
+          echo "# Configuration:" >> linux_odbc_drivers/opt/driver_info.txt
+          cat linux_odbc_drivers/opt/odbcinst.ini >> linux_odbc_drivers/opt/driver_info.txt
+          
+          echo "Creating README file..."
+          cat > linux_odbc_drivers/README.txt << 'EOF'
+# Microsoft ODBC Driver for Linux
+
+This package contains the Microsoft ODBC Driver for SQL Server, compiled for Linux.
+
+## Directory Structure
+
+- `/opt/microsoft/msodbcsql17/lib64/` - Contains the actual driver shared library
+- `/opt/odbcinst.ini` - Contains the ODBC driver configuration
+
+## Usage with Lambda Layer
+
+This package is designed to be extracted into a Lambda layer structure.
+
+When building your layer:
+1. Extract this ZIP file to get the `/opt` directory structure
+2. Install pyodbc into the appropriate Python directory
+3. Zip everything up for your Lambda layer
+
+## Important Note
+
+These are LINUX binaries that will only work in a Linux environment like AWS Lambda.
+They will NOT work directly on Windows.
+EOF
+          
+          # Create the ZIP file
+          echo "Creating ZIP file..."
+          cd linux_odbc_drivers
+          zip -r ../linux_odbc_drivers.zip .
+          cd ..
+          
+          echo "Driver package info:"
+          unzip -l linux_odbc_drivers.zip | grep -E "\.so|odbcinst\.ini"
+
+      - name: Upload Drivers ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-odbc-drivers
+          path: linux_odbc_drivers.zip
+          retention-days: 7
