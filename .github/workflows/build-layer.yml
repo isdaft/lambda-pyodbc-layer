@@ -1,4 +1,4 @@
-name: Build Minimal pyodbc Layer
+name: Build pyodbc Layer with Artifacts
 
 on:
   workflow_dispatch:
@@ -7,7 +7,12 @@ jobs:
   build-layer:
     runs-on: ubuntu-latest
     steps:
-      - name: Build Simple Layer
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      
+      - name: Build Layer
         run: |
           # Create layer structure
           mkdir -p layer/python/lib/python3.9/site-packages
@@ -15,7 +20,7 @@ jobs:
           # Install pyodbc
           pip install pyodbc -t layer/python/lib/python3.9/site-packages
           
-          # Create placeholder for ODBC config
+          # Create config for ODBC
           mkdir -p layer/opt
           echo '[ODBC Driver 17 for SQL Server]' > layer/opt/odbcinst.ini
           echo 'Description=Microsoft ODBC Driver 17 for SQL Server' >> layer/opt/odbcinst.ini
@@ -28,14 +33,10 @@ jobs:
           
           # Show file info
           ls -la pyodbc-layer.zip
-          
-          # Create public link using transfer.sh
-          echo "Creating download link..."
-          DOWNLOAD_URL=$(curl --upload-file pyodbc-layer.zip https://transfer.sh/pyodbc-layer.zip)
-          echo "Download your layer using this link (valid for 14 days):"
-          echo "$DOWNLOAD_URL"
-          
-          # Also provide alternative using file.io (7 day link)
-          ALT_URL=$(curl -F "file=@pyodbc-layer.zip" https://file.io)
-          echo "Alternative download link:"
-          echo "$ALT_URL"
+          echo "Layer size: $(du -h pyodbc-layer.zip | cut -f1)"
+      
+      - name: Upload Layer ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyodbc-layer
+          path: pyodbc-layer.zip
