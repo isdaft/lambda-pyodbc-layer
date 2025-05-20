@@ -1,4 +1,4 @@
-name: Build pyodbc Layer with Artifacts
+name: Build Complete pyodbc Layer with Drivers
 
 on:
   workflow_dispatch:
@@ -12,19 +12,44 @@ jobs:
         with:
           python-version: '3.9'
       
-      - name: Build Layer
+      - name: Install Microsoft ODBC Drivers
+        run: |
+          # Add Microsoft repositories
+          curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+          curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list | sudo tee /etc/apt/sources.list.d/msprod.list
+          
+          # Update packages
+          sudo apt-get update
+          
+          # Install ODBC driver and tools
+          echo 'debconf debconf/frontend select Noninteractive' | sudo debconf-set-selections
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 unixodbc-dev
+          
+          # Check driver installation
+          echo "Checking ODBC drivers:"
+          odbcinst -j
+          cat /etc/odbcinst.ini
+      
+      - name: Build Layer with Drivers
         run: |
           # Create layer structure
           mkdir -p layer/python/lib/python3.9/site-packages
+          mkdir -p layer/opt
           
           # Install pyodbc
           pip install pyodbc -t layer/python/lib/python3.9/site-packages
           
-          # Create config for ODBC
-          mkdir -p layer/opt
-          echo '[ODBC Driver 17 for SQL Server]' > layer/opt/odbcinst.ini
-          echo 'Description=Microsoft ODBC Driver 17 for SQL Server' >> layer/opt/odbcinst.ini
-          echo 'Driver=/opt/microsoft/msodbcsql17/lib64/libmsodbcsql-17.10.so.4.1' >> layer/opt/odbcinst.ini
+          # Copy Microsoft ODBC drivers to layer
+          sudo mkdir -p layer/opt/microsoft
+          sudo cp -r /opt/microsoft/msodbcsql17 layer/opt/microsoft/
+          sudo chown -R $USER:$USER layer/opt
+          
+          # Copy ODBC configuration files
+          cp /etc/odbcinst.ini layer/opt/
+          
+          # List all files in the layer to verify
+          echo "Verifying layer contents:"
+          find layer -type f | sort
           
           # Create zip
           cd layer
@@ -38,5 +63,5 @@ jobs:
       - name: Upload Layer ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: pyodbc-layer
+          name: pyodbc-layer-with-drivers
           path: pyodbc-layer.zip
