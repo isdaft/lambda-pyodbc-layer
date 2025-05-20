@@ -1,0 +1,46 @@
+name: Download Linux ODBC Drivers
+
+on:
+  workflow_dispatch:
+
+jobs:
+  extract-drivers:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Microsoft ODBC Driver
+        run: |
+          echo "Installing Microsoft ODBC Driver for SQL Server..."
+          curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+          curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list | sudo tee /etc/apt/sources.list.d/msprod.list
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 unixodbc-dev
+          
+          echo "Verifying driver installation..."
+          ls -la /opt/microsoft/msodbcsql17/lib64/
+          odbcinst -j
+          cat /etc/odbcinst.ini
+
+      - name: Package Drivers
+        run: |
+          echo "Creating driver package..."
+          mkdir -p odbc_drivers/opt/microsoft
+          cp -r /opt/microsoft/msodbcsql17 odbc_drivers/opt/microsoft/
+          cp /etc/odbcinst.ini odbc_drivers/opt/
+          
+          echo "Directory structure:"
+          find odbc_drivers -type f | sort
+          
+          echo "Creating ZIP..."
+          cd odbc_drivers
+          zip -r ../odbc_drivers.zip .
+          cd ..
+          
+          echo "ZIP info:"
+          ls -la odbc_drivers.zip
+          echo "ZIP size: $(du -h odbc_drivers.zip | cut -f1)"
+
+      - name: Upload Drivers ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-odbc-drivers
+          path: odbc_drivers.zip
