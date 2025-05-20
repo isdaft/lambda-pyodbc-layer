@@ -9,7 +9,7 @@ jobs:
   build-layer:
     runs-on: ubuntu-latest
     steps:
-      - name: Build Layer Manually
+      - name: Build Layer
         run: |
           # Create layer directory structure
           mkdir -p layer/python/lib/python3.9/site-packages
@@ -26,29 +26,47 @@ jobs:
           # Create zip file
           cd layer
           zip -r ../pyodbc-layer.zip .
-          
-          # Print size and contents
           cd ..
+          
+          # Show file info
           ls -la pyodbc-layer.zip
           echo "Layer created: $(du -h pyodbc-layer.zip | cut -f1)"
           
-          # Base64 encode the file (for manual download)
-          echo "LAYER_BASE64=$(base64 -w 0 pyodbc-layer.zip)" >> $GITHUB_ENV
-      
-      - name: Display Download Information
+          # Create output directory
+          mkdir -p output
+          
+          # Split the zip into smaller chunks (1MB each)
+          split -b 1m pyodbc-layer.zip output/pyodbc-layer.zip.part-
+          
+          # List the parts
+          echo "File has been split into parts:"
+          ls -la output/
+          
+          # Create a text file with assembly instructions
+          cat > output/README.txt << 'EOF'
+          To reassemble the pyodbc-layer.zip file:
+          
+          Linux/Mac:
+          cat pyodbc-layer.zip.part-* > pyodbc-layer.zip
+          
+          Windows:
+          copy /b pyodbc-layer.zip.part-* pyodbc-layer.zip
+          EOF
+
+      - name: Store layer file parts
         run: |
-          echo "Layer has been built successfully."
-          echo "To download it, copy the base64-encoded content from the workflow log"
-          echo "and decode it locally using:"
-          echo "  1. For Windows: certutil -decode layer.b64 pyodbc-layer.zip"
-          echo "  2. For Mac/Linux: base64 -d layer.b64 > pyodbc-layer.zip"
+          # Store each part as a step output so it can be seen in the logs
+          for part in output/pyodbc-layer.zip.part-*; do
+            echo "Output part file: $part"
+            echo "::notice::Part file ready for download: $part"
+          done
           
-          # Print first few characters to identify the content in logs
-          echo "Layer Base64 encoded content (first 100 chars):"
-          echo "${LAYER_BASE64:0:100}..."
-          
-          # Store in output file
-          echo "$LAYER_BASE64" > layer.b64
-          
-          # Print file stats
-          ls -la layer.b64
+          # Calculate sha256 hash for verification
+          sha256sum pyodbc-layer.zip > output/checksum.txt
+          cat output/checksum.txt
+      
+      - name: Make files available for download
+        uses: actions/upload-artifact@v1
+        with:
+          name: pyodbc-layer-parts
+          path: output
