@@ -5,18 +5,20 @@ on:
 
 jobs:
   download-drivers:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04  # Use Ubuntu 20.04 specifically which works with the Microsoft repository
     steps:
       - name: Install Microsoft ODBC Driver for Linux
         run: |
           echo "Installing Microsoft ODBC Driver for SQL Server..."
-          curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
-          curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.repo
+          sudo curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+          sudo curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
           sudo apt-get update
-          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev
           
           echo "Driver version info:"
-          ls -la /opt/microsoft/msodbcsql17/lib64/
+          ls -la /opt/microsoft/msodbcsql*/lib64/
+          echo "ODBC Configuration:"
+          odbcinst -j
           cat /etc/odbcinst.ini
 
       - name: Create Correctly Structured Package
@@ -25,33 +27,60 @@ jobs:
           mkdir -p linux_odbc_drivers/opt/microsoft
           mkdir -p linux_odbc_drivers/opt/python
           
-          echo "Copying ODBC driver files..."
-          sudo cp -r /opt/microsoft/msodbcsql17 linux_odbc_drivers/opt/microsoft/
+          echo "Finding ODBC driver..."
+          if [ -d "/opt/microsoft/msodbcsql18" ]; then
+            DRIVER_DIR="/opt/microsoft/msodbcsql18"
+            echo "Found ODBC Driver 18"
+          elif [ -d "/opt/microsoft/msodbcsql17" ]; then
+            DRIVER_DIR="/opt/microsoft/msodbcsql17"
+            echo "Found ODBC Driver 17"
+          else
+            echo "Searching for ODBC drivers..."
+            DRIVER_DIR=$(find /opt -type d -name "msodbcsql*" | head -1)
+            echo "Found driver directory: $DRIVER_DIR"
+          fi
+          
+          if [ -z "$DRIVER_DIR" ]; then
+            echo "ERROR: Could not find Microsoft ODBC driver directory"
+            echo "Available directories in /opt:"
+            ls -la /opt
+            exit 1
+          fi
+          
+          echo "Copying ODBC driver files from $DRIVER_DIR..."
+          sudo cp -r $DRIVER_DIR linux_odbc_drivers/opt/microsoft/
           sudo cp /etc/odbcinst.ini linux_odbc_drivers/opt/
           sudo chown -R $(id -u):$(id -g) linux_odbc_drivers
           
-          echo "Updating odbcinst.ini to ensure it has the correct path..."
-          # Make sure the odbcinst.ini references the correct file
-          grep -q "libmsodbcsql-17.10.so" linux_odbc_drivers/opt/odbcinst.ini
-          if [ $? -eq 0 ]; then
-            # Get the actual driver filename
-            DRIVER_FILE=$(ls linux_odbc_drivers/opt/microsoft/msodbcsql17/lib64/libmsodbcsql-* | head -1)
-            DRIVER_NAME=$(basename $DRIVER_FILE)
-            echo "Found driver: $DRIVER_NAME"
-            
-            # Update the configuration
-            sed -i "s|libmsodbcsql-[0-9]*\.[0-9]*\.so\.[0-9]*\.[0-9]*|$DRIVER_NAME|" linux_odbc_drivers/opt/odbcinst.ini
-            echo "Updated odbcinst.ini to reference: $DRIVER_NAME"
+          echo "Finding actual driver file..."
+          DRIVER_FILE=$(find linux_odbc_drivers -name "libmsodbcsql*.so*" | head -1)
+          if [ -z "$DRIVER_FILE" ]; then
+            echo "ERROR: Could not find libmsodbcsql*.so file"
+            echo "Files in copied directory:"
+            find linux_odbc_drivers -type f | sort
+            exit 1
           fi
+          
+          echo "Found driver file: $DRIVER_FILE"
+          DRIVER_NAME=$(basename $DRIVER_FILE)
+          DRIVER_PATH="/opt/microsoft/$(basename $DRIVER_DIR)/lib64/$DRIVER_NAME"
+          
+          echo "Updating odbcinst.ini to reference correct driver..."
+          # Update the driver path in odbcinst.ini
+          sed -i "s|Driver=.*|Driver=$DRIVER_PATH|" linux_odbc_drivers/opt/odbcinst.ini
+          
+          echo "Updated odbcinst.ini contents:"
+          cat linux_odbc_drivers/opt/odbcinst.ini
           
           echo "Creating validation file..."
           echo "# ODBC Driver Validation File" > linux_odbc_drivers/opt/driver_info.txt
           echo "# Created: $(date)" >> linux_odbc_drivers/opt/driver_info.txt
-          echo "# Driver file: $(ls linux_odbc_drivers/opt/microsoft/msodbcsql17/lib64/libmsodbcsql-* | head -1)" >> linux_odbc_drivers/opt/driver_info.txt
+          echo "# Driver file: $DRIVER_FILE" >> linux_odbc_drivers/opt/driver_info.txt
+          echo "# Driver path in Lambda: $DRIVER_PATH" >> linux_odbc_drivers/opt/driver_info.txt
           echo "# Configuration:" >> linux_odbc_drivers/opt/driver_info.txt
           cat linux_odbc_drivers/opt/odbcinst.ini >> linux_odbc_drivers/opt/driver_info.txt
           
-          echo "Creating README file..."
+          
           
           # Create the ZIP file
           echo "Creating ZIP file..."
