@@ -1,66 +1,54 @@
-name: Build pyodbc Lambda Layer
+name: Build Basic pyodbc Layer
 
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:  # Allows manual triggering
+  workflow_dispatch:
 
 jobs:
   build-layer:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      
-      - name: Set up Docker
-        uses: docker/setup-buildx-action@v1
-        
-      - name: Build Lambda Layer
+      - name: Build Layer Manually
         run: |
-          # Create Dockerfile for building the layer
-          cat > Dockerfile <<EOF
-          FROM public.ecr.aws/lambda/python:3.12
-          
-          # Install build tools and ODBC libraries
-          RUN yum update -y && \
-              yum install -y unixODBC unixODBC-devel gcc curl zip
-          
-          # Install Microsoft ODBC Driver
-          RUN curl https://packages.microsoft.com/config/rhel/8/prod.repo > /etc/yum.repos.d/mssql-release.repo && \
-              ACCEPT_EULA=Y yum install -y msodbcsql17
-          
           # Create layer directory structure
-          RUN mkdir -p /layer/python/lib/python3.12/site-packages /layer/opt
+          mkdir -p layer/python/lib/python3.9/site-packages
           
-          # Install pyodbc only (not pandas)
-          RUN pip install --upgrade pip && \
-              pip install pyodbc -t /layer/python/lib/python3.12/site-packages
+          # Install pyodbc
+          pip install pyodbc -t layer/python/lib/python3.9/site-packages
           
-          # Copy ODBC files
-          RUN cp -r /opt/microsoft /layer/opt/ && \
-              cp /etc/odbcinst.ini /layer/opt/
-              
-          # Create a README file
-          RUN echo "# pyodbc Lambda Layer\n\nContains pyodbc and Microsoft ODBC Driver for SQL Server.\n\nTo use this layer:\n\n1. Add this layer to your Lambda function\n2. Set ODBCSYSINI=/opt in your function's environment variables" > /layer/README.md
-          
-          WORKDIR /layer
+          # Create minimal odbcinst.ini
+          mkdir -p layer/opt
+          echo '[ODBC Driver 17 for SQL Server]' > layer/opt/odbcinst.ini
+          echo 'Description=Microsoft ODBC Driver 17 for SQL Server' >> layer/opt/odbcinst.ini
+          echo 'Driver=/opt/microsoft/msodbcsql17/lib64/libmsodbcsql-17.10.so.4.1' >> layer/opt/odbcinst.ini
           
           # Create zip file
-          RUN zip -r /tmp/layer.zip .
+          cd layer
+          zip -r ../pyodbc-layer.zip .
           
-          # Output file
-          CMD ["cp", "/tmp/layer.zip", "/out/pyodbc-layer.zip"]
-          EOF
+          # Print size and contents
+          cd ..
+          ls -la pyodbc-layer.zip
+          echo "Layer created: $(du -h pyodbc-layer.zip | cut -f1)"
           
-          # Build image and create layer
-          mkdir -p output
-          docker build -t lambda-layer-builder .
-          docker run --rm -v $(pwd)/output:/out lambda-layer-builder
-          
-          echo "Layer created at $(pwd)/output/pyodbc-layer.zip"
-          ls -la output/
+          # Base64 encode the file (for manual download)
+          echo "LAYER_BASE64=$(base64 -w 0 pyodbc-layer.zip)" >> $GITHUB_ENV
       
-      - name: Upload layer as artifact
-        uses: actions/upload-artifact@v2
-        with:
-          name: pyodbc-layer
-          path: output/pyodbc-layer.zip
+      - name: Display Download Information
+        run: |
+          echo "Layer has been built successfully."
+          echo "To download it, copy the base64-encoded content from the workflow log"
+          echo "and decode it locally using:"
+          echo "  1. For Windows: certutil -decode layer.b64 pyodbc-layer.zip"
+          echo "  2. For Mac/Linux: base64 -d layer.b64 > pyodbc-layer.zip"
+          
+          # Print first few characters to identify the content in logs
+          echo "Layer Base64 encoded content (first 100 chars):"
+          echo "${LAYER_BASE64:0:100}..."
+          
+          # Store in output file
+          echo "$LAYER_BASE64" > layer.b64
+          
+          # Print file stats
+          ls -la layer.b64
